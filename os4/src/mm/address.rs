@@ -164,6 +164,11 @@ impl PhysPageNum {
         let pa: PhysAddr = (*self).into();
         unsafe { (pa.0 as *mut T).as_mut().unwrap() }
     }
+
+    pub fn get_mut_offset<T>(&self, offset: usize) -> &'static mut T {
+        let pa: PhysAddr = (*self).into();
+        unsafe { ((pa.0 + offset) as *mut T).as_mut().unwrap() }
+    }
 }
 
 pub trait StepByOne {
