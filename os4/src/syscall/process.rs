@@ -3,9 +3,10 @@
 use crate::config::MAX_SYSCALL_NUM;
 use crate::mm::{PageTable, VirtAddr};
 use crate::task::{
-    current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
+    current_syscall_times, current_user_start_time, current_user_token, exit_current_and_run_next,
+    suspend_current_and_run_next, TaskStatus,
 };
-use crate::timer::get_time_us;
+use crate::timer::{get_time_ms, get_time_us};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -65,5 +66,16 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
-    -1
+    let token = current_user_token();
+    let page_table = PageTable::from_token(token);
+    let v_addr: VirtAddr = (ti as usize).into();
+    let vpn = v_addr.floor();
+    let ppn = page_table.translate(vpn).unwrap().ppn();
+    let offset = v_addr.page_offset();
+    *ppn.get_mut_offset(offset) = TaskInfo {
+        status: TaskStatus::Running,
+        syscall_times: current_syscall_times(),
+        time: get_time_ms() - current_user_start_time(),
+    };
+    0
 }
