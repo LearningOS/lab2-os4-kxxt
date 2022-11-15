@@ -18,5 +18,5 @@ xmas-elf = "0.7.0"
 
 [profile.release]
 debug = true
-opt-level = 2
+opt-level = 0
 lto = true
