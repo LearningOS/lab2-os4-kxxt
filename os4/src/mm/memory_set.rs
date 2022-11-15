@@ -227,40 +227,34 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) -> bool {
-        for area in &self.areas {
-            let astart = area.vpn_range.get_start();
-            let aend = area.vpn_range.get_end();
-            if !(start_va.floor() >= aend || end_va.ceil() < astart) {
-                debug!("Already mapped {start_va:?}->{end_va:?} to {area:?}!");
+        for vpn in VPNRange::new(start_va.floor(), end_va.ceil()) {
+            if self
+                .page_table
+                .translate(vpn)
+                .is_some_and(|pte| pte.is_valid())
+            {
+                debug!("{vpn:?} is already mapped!");
+                return false;
+            }
+            if !self.page_table.mmap(
+                vpn,
+                PTEFlags::V | PTEFlags::from_bits(permission.bits).unwrap(),
+            ) {
                 return false;
             }
         }
-        self.insert_framed_area(start_va, end_va, permission);
         true
     }
 
     pub fn munmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
-        let page_table = &mut self.page_table;
         let vpn_start = start_va.floor();
         let vpn_end = end_va.ceil();
-        let mut total = vpn_end.0 - vpn_start.0;
-        for area in &mut self.areas {
-            let astart = area.vpn_range.get_start();
-            let aend = area.vpn_range.get_end();
-
-            if !(vpn_start >= aend || vpn_end < astart) {
-                let start = max(astart, vpn_start);
-                let end = min(aend, vpn_end);
-                total -= end.0 - start.0;
-                for v in VPNRange::new(start, end) {
-                    area.unmap_one(page_table, v);
-                }
+        for vpn in VPNRange::new(vpn_start, vpn_end) {
+            if !self.page_table.munmap(vpn) {
+                return false;
             }
         }
-        if total != 0 {
-            debug!("MUNMAP: there are unfreed mem: {total}");
-        }
-        total == 0
+        true
     }
 }
 

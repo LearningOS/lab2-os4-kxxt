@@ -170,12 +170,12 @@ impl PageTable {
             return false;
         }
         *pte = PageTableEntry::empty();
-        // let id = self
-        //     .frames
-        //     .iter()
-        //     .position(|fr| fr.ppn == ppn)
-        //     .unwrap();
-        // self.frames.remove(id);
+        let id = self
+            .frames
+            .iter()
+            .position(|fr| fr.ppn == ppn)
+            .unwrap();
+        self.frames.remove(id);
         true
     }
 
