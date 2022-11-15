@@ -1,12 +1,15 @@
 //! Process management syscalls
 
+use core::arch::asm;
 use core::mem;
 
 use crate::config::MAX_SYSCALL_NUM;
-use crate::mm::{frame_alloc, PTEFlags, PageTable, VPNRange, VirtAddr, PageTableEntry};
+use crate::mm::{
+    frame_alloc, MapPermission, PTEFlags, PageTable, PageTableEntry, VPNRange, VirtAddr,
+};
 use crate::task::{
     current_syscall_times, current_user_start_time, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, TaskStatus,
+    suspend_current_and_run_next, TaskStatus, TASK_MANAGER,
 };
 use crate::timer::{get_time_ms, get_time_us};
 
@@ -65,7 +68,6 @@ pub fn sys_set_priority(_prio: isize) -> isize {
     -1
 }
 
-
 pub fn sys_dbg() -> isize {
     warn!("sizeof PTE: {}", mem::size_of::<PageTableEntry>());
     let token = current_user_token();
@@ -86,27 +88,18 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
         debug!("MMAP got invalid argument!, port = {port}, s_addr = {s_addr:?}, offset = {offset}");
         return -1;
     }
-    let e_vpn = VirtAddr::from(start + len).ceil();
     if len == 0 {
         // No allocation at all.
         // TODO: check
         return 0;
     }
-    let token = current_user_token();
-    let mut page_table = PageTable::from_token(token);
-    let flags = PTEFlags::U | PTEFlags::from_bits((flags.bits as u8) << 1).unwrap();
+    let flags = MapPermission::U | MapPermission::from_bits((flags.bits as u8) << 1).unwrap();
     trace!("PTEFlags: {flags:?}");
-    for vpn in VPNRange::new(s_addr.into(), e_vpn) {
-        
-        if !page_table.mmap(vpn, flags) {
-            // Roll back partial alloc
-            debug!("MMAP failed!");
-            // page_table.unmap(vpn);
-            return -1;
-        }
-        page_table.dbg_0x10000();
+    if TASK_MANAGER.mmap_current(s_addr, VirtAddr::from(start + len), flags) {
+        0
+    } else {
+        -1
     }
-    0
 }
 
 pub fn sys_munmap(start: usize, len: usize) -> isize {
@@ -119,15 +112,11 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
         // no need to unmap
         return 0;
     }
-    let e_vpn = VirtAddr::from(start + len).ceil();
-    let token = current_user_token();
-    let mut page_table = PageTable::from_token(token);
-    for vpn in VPNRange::new(s_addr.into(), e_vpn) {
-        if !page_table.munmap(vpn) {
-            return -1;
-        }
+    if TASK_MANAGER.munmap_current(s_addr, VirtAddr::from(start + len)) {
+        0
+    } else {
+        -1
     }
-    0
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info

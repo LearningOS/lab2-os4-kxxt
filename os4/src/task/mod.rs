@@ -16,6 +16,7 @@ mod task;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
@@ -141,6 +142,23 @@ impl TaskManager {
         let inner = self.inner.exclusive_access();
         let cur = inner.current_task;
         inner.tasks[cur].syscall_times
+    }
+
+    pub(crate) fn mmap_current(
+        &self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        perm: MapPermission,
+    ) -> bool {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].memory_set.mmap(start_va, end_va, perm)
+    }
+
+    pub(crate) fn munmap_current(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].memory_set.munmap(start_va, end_va)
     }
 
     #[allow(clippy::mut_from_ref)]

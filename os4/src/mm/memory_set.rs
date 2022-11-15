@@ -1,10 +1,13 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
+use core::cmp::{max, min};
+
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE};
+use crate::task::current_user_token;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -217,6 +220,48 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+
+    pub fn mmap(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> bool {
+        for area in &self.areas {
+            let astart = area.vpn_range.get_start();
+            let aend = area.vpn_range.get_end();
+            if !(start_va.floor() >= aend || end_va.ceil() < astart) {
+                debug!("Already mapped {start_va:?}->{end_va:?} to {area:?}!");
+                return false;
+            }
+        }
+        self.insert_framed_area(start_va, end_va, permission);
+        true
+    }
+
+    pub fn munmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let page_table = &mut self.page_table;
+        let vpn_start = start_va.floor();
+        let vpn_end = end_va.ceil();
+        let mut total = vpn_end.0 - vpn_start.0;
+        for area in &mut self.areas {
+            let astart = area.vpn_range.get_start();
+            let aend = area.vpn_range.get_end();
+
+            if !(vpn_start >= aend || vpn_end < astart) {
+                let start = max(astart, vpn_start);
+                let end = min(aend, vpn_end);
+                total -= end.0 - start.0;
+                for v in VPNRange::new(start, end) {
+                    area.unmap_one(page_table, v);
+                }
+            }
+        }
+        if total != 0 {
+            debug!("MUNMAP: there are unfreed mem: {total}");
+        }
+        total == 0
+    }
 }
 
 /// map area structure, controls a contiguous piece of virtual memory
@@ -225,6 +270,18 @@ pub struct MapArea {
     data_frames: BTreeMap<VirtPageNum, FrameTracker>,
     map_type: MapType,
     map_perm: MapPermission,
+}
+
+impl core::fmt::Debug for MapArea {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MapArea")
+            .field("start", &self.vpn_range.get_start())
+            .field("end", &self.vpn_range.get_end())
+            .field("data_frames", &self.data_frames)
+            .field("map_type", &self.map_type)
+            .field("map_perm", &self.map_perm)
+            .finish()
+    }
 }
 
 impl MapArea {
