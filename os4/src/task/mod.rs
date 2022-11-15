@@ -161,6 +161,17 @@ impl TaskManager {
         inner.tasks[cur].memory_set.munmap(start_va, end_va)
     }
 
+    pub(crate) fn set_val_in_current_task<T: 'static>(&self, va: VirtAddr, val: T) {
+        let inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        *inner.tasks[cur]
+            .memory_set
+            .translate(va.floor())
+            .unwrap()
+            .ppn()
+            .get_mut_offset(va.page_offset()) = val;
+    }
+
     #[allow(clippy::mut_from_ref)]
     /// Get the current 'Running' task's trap contexts.
     fn get_current_trap_cx(&self) -> &mut TrapContext {

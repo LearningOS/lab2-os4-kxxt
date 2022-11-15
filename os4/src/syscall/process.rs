@@ -50,16 +50,14 @@ pub fn sys_yield() -> isize {
 // YOUR JOB: 引入虚地址后重写 sys_get_time
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     let us = get_time_us();
-    let token = current_user_token();
-    let page_table = PageTable::from_token(token);
     let v_addr: VirtAddr = (ts as usize).into();
-    let vpn = v_addr.floor();
-    let ppn = page_table.translate(vpn).unwrap().ppn();
-    let offset = v_addr.page_offset();
-    *ppn.get_mut_offset(offset) = TimeVal {
-        sec: us / 1_000_000,
-        usec: us % 1_000_000,
-    };
+    TASK_MANAGER.set_val_in_current_task(
+        v_addr,
+        TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        },
+    );
     0
 }
 
@@ -71,7 +69,7 @@ pub fn sys_set_priority(_prio: isize) -> isize {
 pub fn sys_dbg() -> isize {
     warn!("sizeof PTE: {}", mem::size_of::<PageTableEntry>());
     let token = current_user_token();
-    let mut page_table = PageTable::from_token(token);
+    let page_table = PageTable::from_token(token);
     page_table.dbg_0x10000();
     0
 }
@@ -121,16 +119,14 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
-    let token = current_user_token();
-    let page_table = PageTable::from_token(token);
     let v_addr: VirtAddr = (ti as usize).into();
-    let vpn = v_addr.floor();
-    let ppn = page_table.translate(vpn).unwrap().ppn();
-    let offset = v_addr.page_offset();
-    *ppn.get_mut_offset(offset) = TaskInfo {
-        status: TaskStatus::Running,
-        syscall_times: current_syscall_times(),
-        time: get_time_ms() - current_user_start_time(),
-    };
+    TASK_MANAGER.set_val_in_current_task(
+        v_addr,
+        TaskInfo {
+            status: TaskStatus::Running,
+            syscall_times: current_syscall_times(),
+            time: get_time_ms() - current_user_start_time(),
+        },
+    );
     0
 }
